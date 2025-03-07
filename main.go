@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/bob17/capp/internal/config"
+	"github.com/bob17/capp/internal/reader"
 )
 
 func main() {
@@ -17,9 +19,22 @@ func main() {
 		return
 	}
 
-	for _, pcap := range defCfg.PcapFiles {
+	for idx, pcap := range defCfg.PcapFiles {
 		fmt.Printf("Path to pcap file: %s \n", pcap)
-	}
 
-	fmt.Println("configuration file content successfully retrieved")
+		reader := reader.NewPCAPReader(defCfg.PcapFiles[idx])
+		err := reader.Open()
+		if err != nil {
+			log.Fatalf("unable to open pcap file: %v", err)
+		}
+		defer reader.Close()
+
+		fileInfo, err := reader.GetFileInfo()
+		if err != nil {
+			log.Printf("unable to read pcap file's content: %v", err)
+		}
+
+		fmt.Println(fileInfo.FileName)
+		fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxx")
+	}
 }
