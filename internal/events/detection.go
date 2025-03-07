@@ -23,3 +23,12 @@ type TcpPacketEvent struct {
 func (e *TcpPacketEvent) EventType() string {
 	return string(TCPPacketEvent)
 }
+
+type UdpPacketEvent struct {
+	UDP            *layers.UDP
+	PacketMetaData gopacket.PacketMetadata
+}
+
+func (e *UdpPacketEvent) EventType() string {
+	return string(UDPPacketEvent)
+}
