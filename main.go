@@ -29,12 +29,6 @@ func main() {
 		}
 		defer reader.Close()
 
-		fileInfo, err := reader.GetFileInfo()
-		if err != nil {
-			log.Printf("unable to read pcap file's content: %v", err)
-		}
-
-		fmt.Println(fileInfo.FileName)
-		fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxx")
+		// reader.ReadPackets()
 	}
 }
