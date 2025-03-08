@@ -68,6 +68,26 @@ func (ea *EndpointAnalysis) analyzePacket(packet gopacket.Packet) {
 	fmt.Printf("Application layer protocol is: %s \n", appProtocol)
 }
 
+func (ea *EndpointAnalysis) updateEndpointStats(
+	ip net.IP,
+	mac net.HardwareAddr,
+	isSender bool,
+	packetSize int,
+	ipProtocol, transportProtocol, appProtocol, peerIP string,
+	peerPort uint16,
+) {
+}
+
+func (ea *EndpointAnalysis) getOrCreateEndpoint(ip net.IP, mac net.HardwareAddr) {}
+
+func formatMAC(mac net.HardwareAddr) string {
+	if mac == nil {
+		return "unknown"
+	}
+
+	return mac.String()
+}
+
 func getEthernetLayer(packet gopacket.Packet) (net.HardwareAddr, net.HardwareAddr) {
 	var SrcMAC, DestMac net.HardwareAddr
 	if ethLayer := packet.Layer(layers.LayerTypeEthernet); ethLayer != nil {
