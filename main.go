@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/bob17/capp/internal/analysis"
 	"github.com/bob17/capp/internal/config"
 	"github.com/bob17/capp/internal/reader"
 )
@@ -29,6 +30,17 @@ func main() {
 		}
 		defer reader.Close()
 
-		// reader.ReadPackets()
+		pck, err := reader.ReadPackets()
+		if err != nil {
+			log.Fatalf("unable to read packets: %v", err)
+		}
+
+		analyzer := analysis.NewProtocolAnalyzer()
+		analyzer.Analyze(pck)
+		resp := analyzer.GetResult()
+
+		for protocol, stats := range resp {
+			fmt.Printf("[%s] >> %v \n", protocol, stats)
+		}
 	}
 }
