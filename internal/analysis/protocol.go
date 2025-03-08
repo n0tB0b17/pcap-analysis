@@ -8,21 +8,30 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+type ProtocolStats struct {
+	Count       int
+	TotalBytes  int64
+	MinSize     int
+	MaxSize     int
+	PacketIDs   []int
+	Description string
+}
+
 type ProtocolAnalyzer struct {
 	PacketCount           int
-	LinkLayerStats        map[string]*Stats
-	NetworkLayerStats     map[string]*Stats
-	TransportLayerStats   map[string]*Stats
-	ApplicationLayerStats map[string]*Stats
+	LinkLayerStats        map[string]*ProtocolStats
+	NetworkLayerStats     map[string]*ProtocolStats
+	TransportLayerStats   map[string]*ProtocolStats
+	ApplicationLayerStats map[string]*ProtocolStats
 	mu                    sync.Mutex
 }
 
 func NewProtocolAnalyzer() *ProtocolAnalyzer {
 	return &ProtocolAnalyzer{
-		LinkLayerStats:        make(map[string]*Stats),
-		NetworkLayerStats:     make(map[string]*Stats),
-		TransportLayerStats:   make(map[string]*Stats),
-		ApplicationLayerStats: make(map[string]*Stats),
+		LinkLayerStats:        make(map[string]*ProtocolStats),
+		NetworkLayerStats:     make(map[string]*ProtocolStats),
+		TransportLayerStats:   make(map[string]*ProtocolStats),
+		ApplicationLayerStats: make(map[string]*ProtocolStats),
 	}
 }
 
@@ -91,7 +100,7 @@ func (pa *ProtocolAnalyzer) analyzePacket(packet gopacket.Packet, identifier int
 }
 
 func (pa *ProtocolAnalyzer) updateProtocolStats(
-	statsMap map[string]*Stats,
+	statsMap map[string]*ProtocolStats,
 	protocol string,
 	size int,
 	packetID int,
@@ -104,10 +113,10 @@ func (pa *ProtocolAnalyzer) updateProtocolStats(
 	pa.updateStats(stats, size, packetID)
 }
 
-func (pa *ProtocolAnalyzer) getOrCreateStats(statsMap map[string]*Stats, protocol, description string, size int) *Stats {
+func (pa *ProtocolAnalyzer) getOrCreateStats(statsMap map[string]*ProtocolStats, protocol, description string, size int) *ProtocolStats {
 	stats, doesExist := statsMap[protocol]
 	if !doesExist {
-		stats = &Stats{
+		stats = &ProtocolStats{
 			MinSize:     size,
 			MaxSize:     size,
 			Description: description,
@@ -119,7 +128,7 @@ func (pa *ProtocolAnalyzer) getOrCreateStats(statsMap map[string]*Stats, protoco
 	return stats
 }
 
-func (pa *ProtocolAnalyzer) updateStats(stats *Stats, size, packetID int) {
+func (pa *ProtocolAnalyzer) updateStats(stats *ProtocolStats, size, packetID int) {
 	stats.Count++
 	stats.TotalBytes += int64(size)
 	stats.PacketIDs = append(stats.PacketIDs, packetID)
@@ -145,7 +154,7 @@ func (pa *ProtocolAnalyzer) GetResult() map[string]interface{} {
 	return resp
 }
 
-func formatProtocolStats(stats map[string]*Stats) map[string]interface{} {
+func formatProtocolStats(stats map[string]*ProtocolStats) map[string]interface{} {
 	resp := make(map[string]interface{})
 
 	for protocol, stat := range stats {
