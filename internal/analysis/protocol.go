@@ -28,10 +28,17 @@ func NewProtocolAnalyzer() *ProtocolAnalyzer {
 
 func (pa *ProtocolAnalyzer) Analyze(packets []gopacket.Packet) {
 	pa.PacketCount = len(packets)
+	var wg sync.WaitGroup
 
 	for i, packet := range packets {
-		pa.analyzePacket(packet, i)
+		wg.Add(1)
+		go func(packet gopacket.Packet, i int) {
+			defer wg.Done()
+			pa.analyzePacket(packet, i)
+		}(packet, i)
 	}
+
+	wg.Wait()
 }
 
 func (pa *ProtocolAnalyzer) analyzePacket(packet gopacket.Packet, identifier int) {
@@ -67,18 +74,10 @@ func (pa *ProtocolAnalyzer) analyzePacket(packet gopacket.Packet, identifier int
 	}
 
 	if applicationLayer := packet.ApplicationLayer(); applicationLayer != nil {
-		appProtocol := ""
+		appProtocol := applicationLayer.LayerType().String()
 
-		if packet.Layer(layers.LayerTypeDNS) != nil {
-			appProtocol = "DNS"
-		} else if packet.Layer(layers.LayerTypeTLS) != nil {
-			appProtocol = "TLS"
-		} else if packet.Layer(layers.LayerTypeDHCPv4) != nil {
-			appProtocol = "DHCPv4"
-		} else if packet.Layer(layers.LayerTypeSIP) != nil {
-			appProtocol = "SIP"
-		} else if packet.Layer(layers.LayerTypeNTP) != nil {
-			appProtocol = "NTP"
+		if appProtocol == "" {
+			appProtocol = "unknown"
 		}
 
 		pa.updateProtocolStats(
@@ -101,6 +100,11 @@ func (pa *ProtocolAnalyzer) updateProtocolStats(
 	pa.mu.Lock()
 	defer pa.mu.Unlock()
 
+	stats := pa.getOrCreateStats(statsMap, protocol, description, size)
+	pa.updateStats(stats, size, packetID)
+}
+
+func (pa *ProtocolAnalyzer) getOrCreateStats(statsMap map[string]*Stats, protocol, description string, size int) *Stats {
 	stats, doesExist := statsMap[protocol]
 	if !doesExist {
 		stats = &Stats{
@@ -112,6 +116,10 @@ func (pa *ProtocolAnalyzer) updateProtocolStats(
 		statsMap[protocol] = stats
 	}
 
+	return stats
+}
+
+func (pa *ProtocolAnalyzer) updateStats(stats *Stats, size, packetID int) {
 	stats.Count++
 	stats.TotalBytes += int64(size)
 	stats.PacketIDs = append(stats.PacketIDs, packetID)
@@ -159,24 +167,33 @@ func getLayerDescription(layer gopacket.Layer) string {
 	switch layer.LayerType() {
 	case layers.LayerTypeEthernet:
 		eth, _ := layer.(*layers.Ethernet)
-		return fmt.Sprintf("Ethernet frame: SrcMAC |> %v --> DstMAC |> %v", eth.SrcMAC, eth.DstMAC)
+		return fmt.Sprintf("Ethernet frame: SrcMAC |> %v --> DstMAC |> %v \n", eth.SrcMAC, eth.DstMAC)
+
 	case layers.LayerTypeIPv4:
 		ip, _ := layer.(*layers.IPv4)
-		return fmt.Sprintf("IPv4 packet: SrcIP |> %v --> DstIP |> %v", ip.SrcIP, ip.DstIP)
+		return fmt.Sprintf("IPv4 packet: SrcIP |> %v --> DstIP |> %v \n", ip.SrcIP, ip.DstIP)
+
 	case layers.LayerTypeIPv6:
 		ip, _ := layer.(*layers.IPv6)
-		return fmt.Sprintf("IPv6 packet: SrcIP |> %v --> DstIP |> %v", ip.SrcIP, ip.DstIP)
+		return fmt.Sprintf("IPv6 packet: SrcIP |> %v --> DstIP |> %v \n", ip.SrcIP, ip.DstIP)
+
 	case layers.LayerTypeTCP:
 		tcp, _ := layer.(*layers.TCP)
-		return fmt.Sprintf("TCP segment: SrcPort |> %v --> DstPort |> %v || seq: %v | ack: %v", tcp.SrcPort, tcp.DstPort, tcp.Seq, tcp.Ack)
+		return fmt.Sprintf("TCP segment: SrcPort |> %v --> DstPort |> %v || seq: %v | ack: %v \n", tcp.SrcPort, tcp.DstPort, tcp.Seq, tcp.Ack)
+
 	case layers.LayerTypeUDP:
 		udp, _ := layer.(*layers.UDP)
-		return fmt.Sprintf("UDP datagram: SrcPort |> %v --> DstPort |> %v", udp.SrcPort, udp.DstPort)
+		return fmt.Sprintf("UDP datagram: SrcPort |> %v --> DstPort |> %v \n", udp.SrcPort, udp.DstPort)
+
 	case layers.LayerTypeICMPv4:
-		return "ICMPv4 message"
+		icmp, _ := layer.(*layers.ICMPv4)
+		return fmt.Sprintf("ICMPv4 message: Type |> %v || Code |> %v \n", icmp.TypeCode.Type(), icmp.TypeCode.Code())
+
 	case layers.LayerTypeICMPv6:
-		return "ICMPv6 message"
+		icmp, _ := layer.(*layers.ICMPv6)
+		return fmt.Sprintf("ICMPv6 message: Type |> %v || Code |> %v \n", icmp.TypeCode.Type(), icmp.TypeCode.Code())
+
 	default:
-		return fmt.Sprintf("%v layer", layer.LayerType())
+		return fmt.Sprintf("%v layer \n", layer.LayerType())
 	}
 }
