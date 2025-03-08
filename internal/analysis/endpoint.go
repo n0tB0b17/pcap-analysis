@@ -46,15 +46,42 @@ func (ea *EndpointAnalysis) Analyze(packets []gopacket.Packet) {
 }
 
 func (ea *EndpointAnalysis) analyzePacket(packet gopacket.Packet) {
-	// ethernet layer
+	// for every get*Layer(packet) function, make use of pointers rather than returning values (later)
+	SrcMAC, DestMac := getEthernetLayer(packet)     // ethernet-layer
+	SrcIP, DestIP, ipProtocol := getIPLayer(packet) // ip-layer
+
+	if SrcMAC != nil && SrcIP != nil {
+		ea.mu.Lock()
+		ea.ipToMAC[SrcIP.String()] = SrcMAC
+		ea.mu.Unlock()
+	}
+
+	if DestMac != nil && DestIP != nil {
+		ea.mu.Lock()
+		ea.ipToMAC[DestIP.String()] = DestMac
+		ea.mu.Unlock()
+	}
+
+	SrcPort, DestPort, transportProtocol, isSyn := getTransportLayer(packet)         // transport-layer
+	appProtocol := getApplicationLayer(packet, transportProtocol, DestPort, SrcPort) // app-layer
+	fmt.Println(ipProtocol, SrcPort, isSyn)
+	fmt.Printf("Application layer protocol is: %s \n", appProtocol)
+}
+
+func getEthernetLayer(packet gopacket.Packet) (net.HardwareAddr, net.HardwareAddr) {
 	var SrcMAC, DestMac net.HardwareAddr
 	if ethLayer := packet.Layer(layers.LayerTypeEthernet); ethLayer != nil {
 		eth, _ := ethLayer.(*layers.Ethernet)
 		SrcMAC = eth.SrcMAC
 		DestMac = eth.DstMAC
+	} else {
+		return nil, nil
 	}
 
-	// ip layer
+	return SrcMAC, DestMac
+}
+
+func getIPLayer(packet gopacket.Packet) (net.IP, net.IP, string) {
 	var SrcIP, DestIP net.IP
 	var ipProtocol string
 
@@ -70,23 +97,13 @@ func (ea *EndpointAnalysis) analyzePacket(packet gopacket.Packet) {
 		ipProtocol = "IPv6"
 	} else {
 		fmt.Println("no endpoint analysis for given packet")
-		return
+		return nil, nil, ""
 	}
 
-	// mapping ip to mac
-	if SrcMAC != nil && SrcIP != nil {
-		ea.mu.Lock()
-		ea.ipToMAC[SrcIP.String()] = SrcMAC
-		ea.mu.Unlock()
-	}
+	return SrcIP, DestIP, ipProtocol
+}
 
-	if DestMac != nil && DestIP != nil {
-		ea.mu.Lock()
-		ea.ipToMAC[DestIP.String()] = DestMac
-		ea.mu.Unlock()
-	}
-
-	// transport layer
+func getTransportLayer(packet gopacket.Packet) (uint16, uint16, string, bool) {
 	var SrcPort, DestPort uint16
 	var transportProtocol string
 	var isSyn bool
@@ -106,40 +123,42 @@ func (ea *EndpointAnalysis) analyzePacket(packet gopacket.Packet) {
 		transportProtocol = "Other"
 	}
 
-	// application layer
+	return SrcPort, DestPort, transportProtocol, isSyn
+}
+
+func getApplicationLayer(packet gopacket.Packet, transportProtocol string, DestPort uint16, SrcPort uint16) string {
 	appProtocol := "Unknown"
 	if packet.Layer(layers.LayerTypeDNS) != nil {
 		appProtocol = "DNS"
 	} else if packet.Layer(layers.LayerTypeTLS) != nil {
 		appProtocol = "TLS"
 	} else if transportProtocol == "TCP" {
-		if DestPort == 80 {
+		if DestPort == 80 || SrcPort == 80 {
 			appProtocol = "HTTP"
-		} else if DestPort == 443 {
+		} else if DestPort == 443 || SrcPort == 443 {
 			appProtocol = "HTTPS"
-		} else if DestPort == 22 {
+		} else if DestPort == 22 || SrcPort == 22 {
 			appProtocol = "SSH"
-		} else if DestPort == 21 {
+		} else if DestPort == 21 || SrcPort == 21 {
 			appProtocol = "FTP"
-		} else if DestPort == 25 || DestPort == 587 {
+		} else if DestPort == 25 || DestPort == 587 || SrcPort == 25 || SrcPort == 587 {
 			appProtocol = "SMTP"
-		} else if DestPort == 110 {
+		} else if DestPort == 110 || SrcPort == 110 {
 			appProtocol = "POP3"
-		} else if DestPort == 143 {
+		} else if DestPort == 143 || SrcPort == 143 {
 			appProtocol = "IMAP"
 		}
 	} else if transportProtocol == "UDP" {
-		if DestPort == 53 {
+		if DestPort == 53 || SrcPort == 53 {
 			appProtocol = "DNS"
-		} else if DestPort == 67 || DestPort == 68 {
+		} else if (DestPort == 67 || DestPort == 68) || (SrcPort == 67 || SrcPort == 68) {
 			appProtocol = "DHCP"
-		} else if DestPort == 123 {
+		} else if DestPort == 123 || SrcPort == 123 {
 			appProtocol = "NTP"
-		} else if DestPort == 161 {
+		} else if DestPort == 161 || SrcPort == 161 {
 			appProtocol = "SNMP"
 		}
 	}
 
-	fmt.Println(ipProtocol, SrcPort, isSyn)
-	fmt.Printf("Application layer protocol is: %s \n", appProtocol)
+	return appProtocol
 }

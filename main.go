@@ -35,12 +35,15 @@ func main() {
 			log.Fatalf("unable to read packets: %v", err)
 		}
 
-		analyzer := analysis.NewProtocolAnalyzer()
-		analyzer.Analyze(pck)
-		resp := analyzer.GetResult()
+		protocolAnalyzer := analysis.NewProtocolAnalyzer()
+		endpointAnalyzer := analysis.NewEndpointAnalyzer()
 
-		for protocol, stats := range resp {
-			fmt.Printf("[%s] >> %v \n", protocol, stats)
-		}
+		endpointAnalyzer.Analyze(pck)
+		protocolAnalyzer.Analyze(pck)
+		// resp := protocolAnalyzer.GetResult()
+
+		// for protocol, stats := range resp {
+		// 	fmt.Printf("[%s] >> %v \n", protocol, stats)
+		// }
 	}
 }
