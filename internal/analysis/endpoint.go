@@ -39,16 +39,14 @@ func NewEndpointAnalyzer() *EndpointAnalysis {
 }
 
 func (ea *EndpointAnalysis) Analyze(packets []gopacket.Packet) {
-	fmt.Printf("total number of packets to endpoint detection is: %d \n", len(packets))
 	for _, packet := range packets {
 		ea.analyzePacket(packet)
 	}
 }
 
 func (ea *EndpointAnalysis) analyzePacket(packet gopacket.Packet) {
-	// for every get*Layer(packet) function, make use of pointers rather than returning values (later)
-	SrcMAC, DestMac := getEthernetLayer(packet)     // ethernet-layer
-	SrcIP, DestIP, ipProtocol := getIPLayer(packet) // ip-layer
+	SrcMAC, DestMac := getEthernetLayer(packet)
+	SrcIP, DestIP, _ := getIPLayer(packet)
 
 	if SrcMAC != nil && SrcIP != nil {
 		ea.mu.Lock()
@@ -62,10 +60,9 @@ func (ea *EndpointAnalysis) analyzePacket(packet gopacket.Packet) {
 		ea.mu.Unlock()
 	}
 
-	SrcPort, DestPort, transportProtocol, isSyn := getTransportLayer(packet)         // transport-layer
-	appProtocol := getApplicationLayer(packet, transportProtocol, DestPort, SrcPort) // app-layer
-	fmt.Println(ipProtocol, SrcPort, isSyn)
-	fmt.Printf("Application layer protocol is: %s \n", appProtocol)
+	SrcPort, DestPort, transportProtocol, _ := getTransportLayer(packet)  // transport-layer
+	_ = getApplicationLayer(packet, transportProtocol, DestPort, SrcPort) // app-layer
+	// fmt.Printf("Application layer protocol is: %s \n", appProtocol)
 }
 
 func (ea *EndpointAnalysis) updateEndpointStats(
@@ -116,7 +113,7 @@ func getIPLayer(packet gopacket.Packet) (net.IP, net.IP, string) {
 		DestIP = addr.DstIP
 		ipProtocol = "IPv6"
 	} else {
-		fmt.Println("no endpoint analysis for given packet")
+		fmt.Printf("no endpoint analysis for given packet %+v \n", packet.Metadata())
 		return nil, nil, ""
 	}
 
@@ -178,6 +175,8 @@ func getApplicationLayer(packet gopacket.Packet, transportProtocol string, DestP
 		} else if DestPort == 161 || SrcPort == 161 {
 			appProtocol = "SNMP"
 		}
+	} else if packet.Layer(layers.LayerTypeARP) != nil {
+		appProtocol = "ARP"
 	}
 
 	return appProtocol

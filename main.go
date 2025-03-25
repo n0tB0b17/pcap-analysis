@@ -40,10 +40,10 @@ func main() {
 
 		endpointAnalyzer.Analyze(pck)
 		protocolAnalyzer.Analyze(pck)
-		// resp := protocolAnalyzer.GetResult()
+		resp := protocolAnalyzer.GetResult()
 
-		// for protocol, stats := range resp {
-		// 	fmt.Printf("[%s] >> %v \n", protocol, stats)
-		// }
+		for protocol, stats := range resp {
+			fmt.Printf("[%s] >> %v \n", protocol, stats)
+		}
 	}
 }

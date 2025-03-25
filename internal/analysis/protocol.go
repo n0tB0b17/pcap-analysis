@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -15,6 +16,21 @@ type ProtocolStats struct {
 	MaxSize     int
 	PacketIDs   []int
 	Description string
+	MetaStat    *ProtocolMetaStats
+}
+
+type ProtocolMetaStats struct {
+	SrcIP        string
+	SrcPort      int
+	DestIP       string
+	DestPort     int
+	SrcMAC       string
+	DestMAC      string
+	ICMPType     uint8
+	ICMPCode     uint8
+	ProtocolType string
+	Seq          int
+	Ack          int
 }
 
 type ProtocolAnalyzer struct {
@@ -50,6 +66,24 @@ func (pa *ProtocolAnalyzer) Analyze(packets []gopacket.Packet) {
 	wg.Wait()
 }
 
+func (pa *ProtocolAnalyzer) GetResult() map[string]interface{} {
+	resp := map[string]interface{}{
+		"totalPacket":      pa.PacketCount,
+		"linkLayer":        formatProtocolStats(pa.LinkLayerStats),
+		"networkLayer":     formatProtocolStats(pa.NetworkLayerStats),
+		"transportLayer":   formatProtocolStats(pa.TransportLayerStats),
+		"applicationLayer": formatProtocolStats(pa.ApplicationLayerStats),
+	}
+
+	return resp
+}
+
+func (pa *ProtocolAnalyzer) GetJSONResult() ([]byte, error) {
+	resp := pa.GetResult()
+
+	return json.MarshalIndent(resp, "", " ")
+}
+
 func (pa *ProtocolAnalyzer) analyzePacket(packet gopacket.Packet, identifier int) {
 	if linkLayer := packet.LinkLayer(); linkLayer != nil {
 		pa.updateProtocolStats(
@@ -57,7 +91,7 @@ func (pa *ProtocolAnalyzer) analyzePacket(packet gopacket.Packet, identifier int
 			linkLayer.LayerType().String(),
 			packet.Metadata().Length, // in bytes
 			identifier,
-			getLayerDescription(linkLayer),
+			getMetaData(linkLayer),
 		)
 
 	}
@@ -68,7 +102,7 @@ func (pa *ProtocolAnalyzer) analyzePacket(packet gopacket.Packet, identifier int
 			networkLayer.LayerType().String(),
 			packet.Metadata().Length,
 			identifier,
-			getLayerDescription(networkLayer),
+			getMetaData(networkLayer),
 		)
 	}
 
@@ -78,7 +112,7 @@ func (pa *ProtocolAnalyzer) analyzePacket(packet gopacket.Packet, identifier int
 			transportLayer.LayerType().String(),
 			packet.Metadata().Length,
 			identifier,
-			getLayerDescription(transportLayer),
+			getMetaData(transportLayer),
 		)
 	}
 
@@ -94,7 +128,7 @@ func (pa *ProtocolAnalyzer) analyzePacket(packet gopacket.Packet, identifier int
 			appProtocol,
 			len(applicationLayer.Payload()),
 			identifier,
-			"Application data",
+			nil,
 		)
 	}
 }
@@ -104,22 +138,30 @@ func (pa *ProtocolAnalyzer) updateProtocolStats(
 	protocol string,
 	size int,
 	packetID int,
-	description string,
+	metadata *ProtocolMetaStats,
 ) {
 	pa.mu.Lock()
 	defer pa.mu.Unlock()
 
-	stats := pa.getOrCreateStats(statsMap, protocol, description, size)
+	stats := pa.getOrCreateStats(statsMap, protocol, size)
 	pa.updateStats(stats, size, packetID)
+
+	if stats.MetaStat == nil && metadata != nil {
+		stats.MetaStat = metadata
+	}
 }
 
-func (pa *ProtocolAnalyzer) getOrCreateStats(statsMap map[string]*ProtocolStats, protocol, description string, size int) *ProtocolStats {
+func (pa *ProtocolAnalyzer) getOrCreateStats(
+	statsMap map[string]*ProtocolStats,
+	protocol string,
+	size int,
+
+) *ProtocolStats {
 	stats, doesExist := statsMap[protocol]
 	if !doesExist {
 		stats = &ProtocolStats{
-			MinSize:     size,
-			MaxSize:     size,
-			Description: description,
+			MinSize: size,
+			MaxSize: size,
 		}
 
 		statsMap[protocol] = stats
@@ -142,34 +184,92 @@ func (pa *ProtocolAnalyzer) updateStats(stats *ProtocolStats, size, packetID int
 	}
 }
 
-func (pa *ProtocolAnalyzer) GetResult() map[string]interface{} {
-	resp := map[string]interface{}{
-		"totalPacket":      pa.PacketCount,
-		"linkLayer":        formatProtocolStats(pa.LinkLayerStats),
-		"networkLayer":     formatProtocolStats(pa.NetworkLayerStats),
-		"transportLayer":   formatProtocolStats(pa.TransportLayerStats),
-		"applicationLayer": formatProtocolStats(pa.ApplicationLayerStats),
+func formatProtocolStats(stats map[string]*ProtocolStats) map[string]interface{} {
+	resp := make(map[string]interface{})
+
+	for protocol, stat := range stats {
+		protocolData := map[string]interface{}{
+			"count":      stat.Count,
+			"totalBytes": stat.TotalBytes,
+			"minSize":    stat.MinSize,
+			"maxSize":    stat.MaxSize,
+			"avgSize":    float64(stat.TotalBytes) / float64(stat.Count),
+			// "packetIDs":   stat.PacketIDs,
+			"description": stat.Description,
+		}
+
+		if stat.MetaStat != nil {
+			protocolData["metadata"] = map[string]interface{}{
+				"srcIP":        stat.MetaStat.SrcIP,
+				"srcPort":      stat.MetaStat.SrcPort,
+				"destIP":       stat.MetaStat.DestIP,
+				"destPort":     stat.MetaStat.DestPort,
+				"srcMAC":       stat.MetaStat.SrcMAC,
+				"destMAC":      stat.MetaStat.DestMAC,
+				"icmpType":     stat.MetaStat.ICMPType,
+				"icmpCode":     stat.MetaStat.ICMPCode,
+				"protocolType": stat.MetaStat.ProtocolType,
+				"sequence":     stat.MetaStat.Seq,
+				"acknowledge":  stat.MetaStat.Ack,
+			}
+		}
+		resp[protocol] = protocolData
 	}
 
 	return resp
 }
 
-func formatProtocolStats(stats map[string]*ProtocolStats) map[string]interface{} {
-	resp := make(map[string]interface{})
+func getMetaData(layer gopacket.Layer) *ProtocolMetaStats {
+	metaData := &ProtocolMetaStats{}
+	switch layer.LayerType() {
+	case layers.LayerTypeEthernet:
+		eth, _ := layer.(*layers.Ethernet)
 
-	for protocol, stat := range stats {
-		resp[protocol] = map[string]interface{}{
-			"count":       stat.Count,
-			"totalBytes":  stat.TotalBytes,
-			"minSize":     stat.MinSize,
-			"maxSize":     stat.MaxSize,
-			"avgSize":     float64(stat.TotalBytes) / float64(stat.Count),
-			"packetIDs":   stat.PacketIDs,
-			"description": stat.Description,
-		}
+		metaData.SrcMAC = eth.SrcMAC.String()
+		metaData.DestMAC = eth.DstMAC.String()
+		return metaData
+
+	case layers.LayerTypeIPv4:
+		ip, _ := layer.(*layers.IPv4)
+
+		metaData.SrcIP = ip.SrcIP.String()
+		metaData.DestIP = ip.DstIP.String()
+		return metaData
+
+	case layers.LayerTypeIPv6:
+		ip, _ := layer.(*layers.IPv6)
+		metaData.SrcIP = ip.SrcIP.String()
+		metaData.DestIP = ip.DstIP.String()
+		return metaData
+
+	case layers.LayerTypeTCP:
+		tcp, _ := layer.(*layers.TCP)
+
+		metaData.SrcPort = int(tcp.SrcPort)
+		metaData.DestPort = int(tcp.DstPort)
+		return metaData
+
+	case layers.LayerTypeUDP:
+		udp, _ := layer.(*layers.UDP)
+		metaData.SrcPort = int(udp.SrcPort)
+		metaData.DestPort = int(udp.DstPort)
+		return metaData
+
+	case layers.LayerTypeICMPv4:
+		icmp, _ := layer.(*layers.ICMPv4)
+		metaData.ICMPType = icmp.TypeCode.Type()
+		metaData.ICMPCode = icmp.TypeCode.Code()
+		return metaData
+
+	case layers.LayerTypeICMPv6:
+		icmp, _ := layer.(*layers.ICMPv6)
+		metaData.ICMPType = icmp.TypeCode.Type()
+		metaData.ICMPCode = icmp.TypeCode.Code()
+		return metaData
+
+	default:
+		return metaData
 	}
-
-	return resp
 }
 
 func getLayerDescription(layer gopacket.Layer) string {

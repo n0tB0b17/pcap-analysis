@@ -1,5 +1,5 @@
 pcap_files:
-  - "/home/lilbob/Desktop/warmup/pcap-analysis/pcap-src/host_2_capture.pcap"
-  - "/home/lilbob/Desktop/warmup/pcap-analysis/pcap-src/host_capture.pcap"
+  - "/home/vairav-babin/localdisk-c/etc/AD/pcap-analysis/pcap-src/12_packet.pcap"
+  # - "/home/vairav-babin/localdisk-c/etc/AD/pcap-analysis/pcap-src/host_capture.pcap"
 log_level: debug
 log_file: "scanner.log"
